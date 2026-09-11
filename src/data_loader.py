@@ -72,18 +72,15 @@ class SignatureDatasetLoader:
         self._log("Downloading CEDAR dataset...")
         
         # Note: You may need to update this URL
-        # Try these URLs if one doesn't work:
         urls = [
             "https://www.dropbox.com/s/xxxxxxxxx/cedar.zip?dl=1",
             "https://www.cedar.buffalo.edu/NIJ/data/signatures.rar",
-            # Add alternative URLs here
         ]
         
         for url in urls:
             try:
                 zip_path = self.raw_dir / 'cedar.zip'
                 
-                # Download with progress bar
                 response = requests.get(url, stream=True)
                 total_size = int(response.headers.get('content-length', 0))
                 
@@ -94,24 +91,19 @@ class SignatureDatasetLoader:
                             f.write(data)
                             pbar.update(len(data))
                 
-                # Extract
                 self._log("Extracting CEDAR dataset...")
                 with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                     zip_ref.extractall(self.raw_dir)
                 
-                # Rename extracted folder if needed
                 extracted = self.raw_dir / 'cedar'
                 if not extracted.exists():
-                    # Try to find the extracted folder
                     for item in self.raw_dir.iterdir():
                         if item.is_dir() and item.name != 'cedar':
                             if 'cedar' in item.name.lower():
                                 item.rename(extracted)
                                 break
                 
-                # Remove zip file
                 zip_path.unlink()
-                
                 self._log(f"CEDAR dataset downloaded to {cedar_dir}")
                 return
                 
@@ -119,13 +111,10 @@ class SignatureDatasetLoader:
                 self._log(f"Failed to download from {url}: {e}")
                 continue
         
-        # If all URLs failed
         self._log("=" * 60)
         self._log("⚠️  Could not automatically download CEDAR dataset.")
         self._log("Please manually download from:")
         self._log("  - https://www.cedar.buffalo.edu/NIJ/data/signatures.rar")
-        self._log("  - Or use Kaggle: https://www.kaggle.com/datasets/")
-        self._log("  - Or email cedar-sig@buffalo.edu for access")
         self._log("=" * 60)
     
     def load_cedar(self):
@@ -147,7 +136,6 @@ class SignatureDatasetLoader:
         self.genuine_images = []
         self.forged_images = []
         
-        # CEDAR structure: each folder is a person
         person_dirs = [d for d in cedar_dir.iterdir() if d.is_dir()]
         
         for person_dir in tqdm(person_dirs, desc="Loading signatures"):
@@ -156,9 +144,8 @@ class SignatureDatasetLoader:
                     img = cv2.imread(str(img_file), cv2.IMREAD_GRAYSCALE)
                     if img is not None:
                         img = cv2.resize(img, self.img_size)
-                        img = img / 255.0  # Normalize
+                        img = img / 255.0
                         
-                        # Check if forged (contains 'F' in filename)
                         if 'F' in img_file.stem:
                             self.forged_images.append(img)
                         else:
@@ -170,12 +157,7 @@ class SignatureDatasetLoader:
         return np.array(self.genuine_images), np.array(self.forged_images)
     
     def load_gpds(self, gpds_path=None):
-        """
-        Load GPDS dataset
-        
-        Args:
-            gpds_path: Path to GPDS dataset (if already downloaded)
-        """
+        """Load GPDS dataset"""
         if gpds_path:
             gpds_dir = Path(gpds_path)
         else:
@@ -189,7 +171,6 @@ class SignatureDatasetLoader:
         self.genuine_images = []
         self.forged_images = []
         
-        # GPDS structure
         genuine_dir = gpds_dir / 'Reference'
         forged_dir = gpds_dir / 'Forged'
         
@@ -215,12 +196,7 @@ class SignatureDatasetLoader:
         return np.array(self.genuine_images), np.array(self.forged_images)
     
     def load_from_kaggle(self, kaggle_path=None):
-        """
-        Load dataset from Kaggle
-        
-        Args:
-            kaggle_path: Path to Kaggle dataset
-        """
+        """Load dataset from Kaggle"""
         if kaggle_path:
             dataset_dir = Path(kaggle_path)
         else:
@@ -231,11 +207,9 @@ class SignatureDatasetLoader:
             self._log("Please download from Kaggle and place in data/raw/kaggle/")
             return None, None
         
-        # Try to find genuine and forged folders
         self.genuine_images = []
         self.forged_images = []
         
-        # Look for common structures
         for pattern in ['genuine', 'real', 'original', 'gen']:
             genuine_dir = dataset_dir / pattern
             if genuine_dir.exists():
@@ -269,26 +243,28 @@ class SignatureDatasetLoader:
     def create_pairs(self, genuine=None, forged=None, num_pairs=10000):
         """
         Create training pairs for Siamese network
-        
-        Args:
-            genuine: Genuine images array
-            forged: Forged images array
-            num_pairs: Number of pairs to generate
-        
-        Returns:
-            tuple: (X1, X2, y) where y=1 means same person, y=0 means different
         """
         if genuine is None:
             genuine = np.array(self.genuine_images)
         if forged is None:
             forged = np.array(self.forged_images)
         
+        # Check if data exists
+        if len(genuine) == 0 or len(forged) == 0:
+            print("⚠️ No data loaded! Please run load_cedar() first.")
+            return np.array([]), np.array([]), np.array([])
+        
+        # Add channel dimension if needed
+        if len(genuine.shape) == 3:
+            genuine = genuine.reshape(-1, self.img_size[0], self.img_size[1], 1)
+            forged = forged.reshape(-1, self.img_size[0], self.img_size[1], 1)
+        
         X1 = []
         X2 = []
         y = []
         
         # Positive pairs (genuine vs genuine)
-        for _ in tqdm(range(num_pairs // 2), desc="Creating positive pairs"):
+        for _ in range(num_pairs // 2):
             idx1 = np.random.randint(0, len(genuine))
             idx2 = np.random.randint(0, len(genuine))
             X1.append(genuine[idx1])
@@ -296,7 +272,7 @@ class SignatureDatasetLoader:
             y.append(1)
         
         # Negative pairs (genuine vs forged)
-        for _ in tqdm(range(num_pairs // 2), desc="Creating negative pairs"):
+        for _ in range(num_pairs // 2):
             idx1 = np.random.randint(0, len(genuine))
             idx2 = np.random.randint(0, len(forged))
             X1.append(genuine[idx1])
@@ -306,13 +282,7 @@ class SignatureDatasetLoader:
         return np.array(X1), np.array(X2), np.array(y)
     
     def save_processed_data(self, data, name='sigverify_data'):
-        """
-        Save processed data for later use
-        
-        Args:
-            data: Dictionary containing train/test data
-            name: Name prefix for saved files
-        """
+        """Save processed data for later use"""
         save_dir = self.processed_dir / name
         save_dir.mkdir(exist_ok=True)
         
@@ -323,15 +293,7 @@ class SignatureDatasetLoader:
         self._log(f"Data saved to {save_dir}")
     
     def load_processed_data(self, name='sigverify_data'):
-        """
-        Load processed data
-        
-        Args:
-            name: Name prefix for saved files
-        
-        Returns:
-            dict: Loaded data
-        """
+        """Load processed data"""
         data = {}
         load_dir = self.processed_dir / name
         
@@ -347,24 +309,12 @@ class SignatureDatasetLoader:
         return data
     
     def get_train_test_data(self, test_size=0.2, num_pairs=10000):
-        """
-        Get train and test data splits
-        
-        Args:
-            test_size: Proportion of test data
-            num_pairs: Number of pairs to generate
-        
-        Returns:
-            dict: {'train': (X1, X2, y), 'test': (X1, X2, y)}
-        """
-        # Load data if not already loaded
+        """Get train and test data splits"""
         if len(self.genuine_images) == 0:
             self.load_cedar()
         
-        # Create pairs
         X1, X2, y = self.create_pairs(num_pairs=num_pairs)
         
-        # Split
         X1_train, X1_test, X2_train, X2_test, y_train, y_test = train_test_split(
             X1, X2, y, test_size=test_size, random_state=42
         )
@@ -377,13 +327,7 @@ class SignatureDatasetLoader:
         }
     
     def visualize_samples(self, num_samples=5, save_path=None):
-        """
-        Visualize sample signatures
-        
-        Args:
-            num_samples: Number of samples to display
-            save_path: Path to save the figure
-        """
+        """Visualize sample signatures"""
         import matplotlib.pyplot as plt
         
         if len(self.genuine_images) == 0:
@@ -391,14 +335,12 @@ class SignatureDatasetLoader:
         
         fig, axes = plt.subplots(2, num_samples, figsize=(15, 6))
         
-        # Genuine samples
         for i in range(num_samples):
             idx = np.random.randint(0, len(self.genuine_images))
             axes[0, i].imshow(self.genuine_images[idx], cmap='gray')
             axes[0, i].set_title('Genuine')
             axes[0, i].axis('off')
         
-        # Forged samples
         for i in range(num_samples):
             idx = np.random.randint(0, len(self.forged_images))
             axes[1, i].imshow(self.forged_images[idx], cmap='gray')
@@ -414,12 +356,7 @@ class SignatureDatasetLoader:
         plt.show()
     
     def get_dataset_stats(self):
-        """
-        Get statistics about the loaded dataset
-        
-        Returns:
-            dict: Dataset statistics
-        """
+        """Get statistics about the loaded dataset"""
         return {
             'num_genuine': len(self.genuine_images),
             'num_forged': len(self.forged_images),
@@ -430,26 +367,15 @@ class SignatureDatasetLoader:
 
 # Example usage
 if __name__ == "__main__":
-    # Initialize loader
     loader = SignatureDatasetLoader(data_dir='data')
-    
-    # Download dataset (first time only)
-    # loader.download_cedar()
-    
-    # Load dataset
     loader.load_cedar()
-    
-    # Print statistics
     print(loader.get_dataset_stats())
     
-    # Create pairs
     X1, X2, y = loader.create_pairs(num_pairs=5000)
     print(f"Created {len(X1)} pairs")
     
-    # Visualize
     loader.visualize_samples(save_path='results/figures/sample_signatures.png')
     
-    # Get train/test data
     data = loader.get_train_test_data()
     print(f"Train data: {data['train'][0].shape}")
     print(f"Test data: {data['test'][0].shape}")

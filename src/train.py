@@ -3,12 +3,17 @@ Training script for Siamese CNN
 """
 
 import os
+import sys
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.callbacks import (
     ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 )
 import matplotlib.pyplot as plt
+
+# Add src to path so we can import modules
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from data_loader import SignatureDatasetLoader
 from model import create_siamese_cnn, contrastive_loss
 
@@ -58,7 +63,7 @@ class SigVerifyTrainer:
         """Build and compile the model"""
         print("\n🧠 Building Siamese CNN model...")
         
-        self.model = create_siamese_cnn(self.img_size + (1,))
+        self.model = create_siamese_cnn((self.img_size[0], self.img_size[1], 1))
         
         self.model.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
@@ -74,7 +79,7 @@ class SigVerifyTrainer:
         """Get training callbacks"""
         return [
             ModelCheckpoint(
-                filepath=os.path.join(self.model_dir, 'best_model.h5'),
+                filepath=os.path.join(self.model_dir, 'best_model.keras'),
                 monitor='val_accuracy',
                 mode='max',
                 save_best_only=True,
@@ -160,7 +165,7 @@ class SigVerifyTrainer:
         
         plt.show()
     
-    def save_model(self, filename='final_model.h5'):
+    def save_model(self, filename='final_model.keras'):
         """Save the trained model"""
         self.model.save(os.path.join(self.model_dir, filename))
         print(f"✅ Model saved to {self.model_dir}/{filename}")
