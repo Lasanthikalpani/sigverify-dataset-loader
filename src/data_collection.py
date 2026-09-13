@@ -119,8 +119,13 @@ class SignatureDataCollector:
         print(f"✅ BHSig: {genuine_loaded} genuine, {forged_loaded} forged")
         return genuine_loaded, forged_loaded
     
-    def load_kaggle(self):
-        """Load Kaggle dataset"""
+    def load_kaggle(self, max_images=10000):
+        """Load Kaggle dataset (manishvem/signatures-dataset)
+        
+        Structure:
+        - Folder without _forg = genuine (e.g., 1472/)
+        - Folder with _forg = forged (e.g., 1472_forg/)
+        """
         kaggle_dir = self.raw_dir / 'kaggle'
         
         if not kaggle_dir.exists():
@@ -130,11 +135,25 @@ class SignatureDataCollector:
         initial_genuine = len(self.genuine_images)
         initial_forged = len(self.forged_images)
         
-        for img_file in kaggle_dir.rglob('*.png'):
+        # Get all image files
+        all_files = list(kaggle_dir.rglob('*.jpg')) + list(kaggle_dir.rglob('*.png'))
+        print(f"   Found {len(all_files)} total images")
+        
+        # Limit for speed
+        if len(all_files) > max_images:
+            np.random.shuffle(all_files)
+            all_files = all_files[:max_images]
+            print(f"   Limited to {max_images} images for speed")
+        
+        # Process
+        for img_file in tqdm(all_files, desc="Loading Kaggle"):
             img = cv2.imread(str(img_file), cv2.IMREAD_GRAYSCALE)
             if img is not None:
                 img = cv2.resize(img, (128, 128)) / 255.0
-                if 'forged' in str(img_file).lower() or 'fake' in str(img_file).lower():
+                
+                # Check if parent folder has '_forg' in name
+                parent_folder = img_file.parent.name
+                if '_forg' in parent_folder.lower() or 'forged' in parent_folder.lower():
                     self.forged_images.append(img)
                 else:
                     self.genuine_images.append(img)
