@@ -269,5 +269,5 @@ if __name__ == "__main__":
     loader = SignatureDatasetLoader()
     loader.load_cedar()
     
-    model = load_model('models/gradcam_model.keras')
+    model = load_model('models/simple_siamese_model_fixed.keras', safe_mode=False)
     test_grad_cam(model, loader, num_samples=3)

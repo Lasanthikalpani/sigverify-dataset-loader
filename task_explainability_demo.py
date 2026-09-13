@@ -29,9 +29,9 @@ stats = loader.get_dataset_stats()
 print(f"   ✅ Loaded {stats['num_genuine']} genuine signatures")
 print(f"   ✅ Loaded {stats['num_forged']} forged signatures")
 
-# Load model
+# Load model - UPDATED PATH AND safe_mode
 print("\n🧠 Loading model...")
-model = load_model('models/gradcam_model.keras')
+model = load_model('models/simple_siamese_model_fixed.keras', safe_mode=False)
 print(f"   ✅ Model loaded! Parameters: {model.count_params():,}")
 
 print("\n" + "=" * 70)
