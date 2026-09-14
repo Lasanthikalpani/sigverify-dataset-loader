@@ -1,5 +1,5 @@
 """
-CEDAR Training - OPTIMIZED (5000 pairs)
+CEDAR Training - ORIGINAL Data Only (No Augmentation)
 SigVerify - RQ1 Core AI Performance
 """
 
@@ -16,7 +16,7 @@ from tqdm import tqdm
 import re
 
 print("=" * 70)
-print("🧠 SIGVERIFY - OPTIMIZED TRAINING")
+print("🧠 SIGVERIFY - ORIGINAL DATA ONLY")
 print("=" * 70)
 
 def absolute_difference(x):
@@ -81,62 +81,49 @@ print(f"   Train people: {len(train_people)}")
 print(f"   Val people: {len(val_people)}")
 
 # ============================================================
-# Create pairs LIMITED to 5000
+# Create pairs from TRAIN people only (original data)
 # ============================================================
-print("\n📂 Creating limited pairs...")
+print("\n📂 Creating training pairs (original only)...")
 
 X1_train, X2_train, y_train = [], [], []
 
-TARGET_PAIRS = 5000
-POSITIVE_TARGET = 2500
-NEGATIVE_TARGET = 2500
-
-# Positive: Same person genuine (use only 3 images per person)
-pos_count = 0
 for pid in train_people:
-    if pos_count >= POSITIVE_TARGET:
-        break
     gen = people[pid]['genuine']
-    for i in range(min(3, len(gen))):
-        for j in range(i+1, min(i+3, len(gen))):
-            if pos_count >= POSITIVE_TARGET:
-                break
+    forg = people[pid]['forged']
+    
+    # Positive: Same person genuine
+    for i in range(len(gen)):
+        for j in range(i+1, len(gen)):
             X1_train.append(gen[i])
             X2_train.append(gen[j])
             y_train.append(1)
-            pos_count += 1
-
-print(f"   Positive: {pos_count}")
-
-# Negative: Genuine vs Forged (same person)
-neg_count = 0
-for pid in train_people:
-    if neg_count >= NEGATIVE_TARGET:
-        break
-    gen = people[pid]['genuine']
-    forg = people[pid]['forged']
-    for g in gen[:2]:
-        for f in forg[:2]:
-            if neg_count >= NEGATIVE_TARGET:
-                break
+    
+    # Negative: Genuine vs Forged (same person)
+    for g in gen:
+        for f in forg:
             X1_train.append(g)
             X2_train.append(f)
             y_train.append(0)
-            neg_count += 1
 
-print(f"   Negative: {neg_count}")
+print(f"   Before balance: Positive={sum(y_train)}, Negative={len(y_train)-sum(y_train)}")
 
-X1_train = np.array(X1_train).reshape(-1, 128, 128, 1)
-X2_train = np.array(X2_train).reshape(-1, 128, 128, 1)
-y_train = np.array(y_train)
+# Balance
+pos_idx = [i for i, l in enumerate(y_train) if l == 1]
+neg_idx = [i for i, l in enumerate(y_train) if l == 0]
+min_count = min(len(pos_idx), len(neg_idx))
 
-idx = np.random.permutation(len(X1_train))
-X1_train, X2_train, y_train = X1_train[idx], X2_train[idx], y_train[idx]
+keep = list(np.random.choice(pos_idx, min_count, replace=False)) + \
+       list(np.random.choice(neg_idx, min_count, replace=False))
 
-print(f"   Total training pairs: {len(X1_train)}")
+X1_train = np.array([X1_train[i] for i in keep]).reshape(-1, 128, 128, 1)
+X2_train = np.array([X2_train[i] for i in keep]).reshape(-1, 128, 128, 1)
+y_train = np.array([y_train[i] for i in keep])
+
+print(f"   After balance: Positive={sum(y_train)}, Negative={len(y_train)-sum(y_train)}")
+print(f"   Training pairs: {len(X1_train)}")
 
 # ============================================================
-# Validation pairs
+# Create validation pairs from VAL people
 # ============================================================
 print("\n📂 Creating validation pairs...")
 
@@ -146,11 +133,13 @@ for pid in val_people:
     gen = people[pid]['genuine']
     forg = people[pid]['forged']
     
+    # Positive
     if len(gen) >= 2:
         X1_val.append(gen[0])
         X2_val.append(gen[1])
         y_val.append(1)
     
+    # Negative
     if len(gen) >= 1 and len(forg) >= 1:
         X1_val.append(gen[0])
         X2_val.append(forg[0])
@@ -173,16 +162,13 @@ def create_model():
         x = layers.Conv2D(32, (3,3), padding='same', activation='relu')(inp)
         x = layers.BatchNormalization()(x)
         x = layers.MaxPooling2D()(x)
-        x = layers.Dropout(0.2)(x)
         x = layers.Conv2D(64, (3,3), padding='same', activation='relu')(x)
         x = layers.BatchNormalization()(x)
         x = layers.MaxPooling2D()(x)
-        x = layers.Dropout(0.3)(x)
         x = layers.Conv2D(128, (3,3), padding='same', activation='relu')(x)
         x = layers.BatchNormalization()(x)
         x = layers.GlobalAveragePooling2D()(x)
         x = layers.Dense(64, activation='relu')(x)
-        x = layers.Dropout(0.4)(x)
         return Model(inp, x)
     
     b = base()
@@ -209,28 +195,28 @@ print(f"   Parameters: {model.count_params():,}")
 print("\n🏋️ Training...")
 
 callbacks = [
-    ModelCheckpoint('models/model_final.keras',
+    ModelCheckpoint('models/model_original.keras',
                     monitor='val_accuracy', save_best_only=True, verbose=1),
-    EarlyStopping(monitor='val_loss', patience=7, restore_best_weights=True, verbose=1)
+    EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True, verbose=1)
 ]
 
 history = model.fit(
     [X1_train, X2_train], y_train,
     validation_data=([X1_val, X2_val], y_val),
-    epochs=20,
-    batch_size=64,
+    epochs=30,
+    batch_size=32,
     callbacks=callbacks,
     verbose=1
 )
 
-model.save('models/model_final.keras')
+model.save('models/model_original.keras')
 print(f"\n✅ Model saved!")
 print(f"   Best validation accuracy: {max(history.history['val_accuracy'])*100:.2f}%")
 
 # ============================================================
-# Test
+# Test on validation people
 # ============================================================
-print("\n📋 Testing...")
+print("\n📋 Testing on validation people...")
 
 threshold = 0.3
 correct_g = 0
@@ -257,17 +243,20 @@ print(f"\n   Genuine: {correct_g}/{len(val_people)}")
 print(f"   Forged: {correct_f}/{len(val_people)}")
 print(f"   Overall: {(correct_g + correct_f)/(len(val_people)*2)*100:.1f}%")
 
+# ============================================================
+# Summary
+# ============================================================
 print("\n" + "=" * 70)
 print("📋 SUMMARY")
 print("=" * 70)
 print(f"""
 DATASET:
    - People: {len(people)}
-   - Total: {total_g + total_f} ✅ (1000+)
-
-TRAINING:
+   - Total signatures: {total_g + total_f} ✅ (1000+)
    - Train people: {len(train_people)}
    - Val people: {len(val_people)}
+
+TRAINING:
    - Training pairs: {len(X1_train)}
    - Validation pairs: {len(X1_val)}
 

@@ -1,5 +1,5 @@
 """
-CEDAR Training - OPTIMIZED (5000 pairs)
+CEDAR Training - FULL Pairs (From All Images)
 SigVerify - RQ1 Core AI Performance
 """
 
@@ -16,7 +16,7 @@ from tqdm import tqdm
 import re
 
 print("=" * 70)
-print("🧠 SIGVERIFY - OPTIMIZED TRAINING")
+print("🧠 SIGVERIFY - FULL PAIRS TRAINING")
 print("=" * 70)
 
 def absolute_difference(x):
@@ -56,7 +56,11 @@ for img_file in tqdm(sorted(list(forg_dir.glob('*.png'))), desc="Forged"):
             people[pid] = {'genuine': [], 'forged': []}
         people[pid]['forged'].append(img)
 
-print(f"\n✅ Loaded {len(people)} people")
+# Filter people with enough images
+people = {pid: d for pid, d in people.items()
+          if len(d['genuine']) >= 5 and len(d['forged']) >= 5}
+
+print(f"\n✅ Loaded {len(people)} people (with >=5 images each)")
 
 total_g = sum(len(p['genuine']) for p in people.values())
 total_f = sum(len(p['forged']) for p in people.values())
@@ -81,59 +85,46 @@ print(f"   Train people: {len(train_people)}")
 print(f"   Val people: {len(val_people)}")
 
 # ============================================================
-# Create pairs LIMITED to 5000
+# Create pairs (USE ALL IMAGES)
 # ============================================================
-print("\n📂 Creating limited pairs...")
+print("\n📂 Creating pairs (all images)...")
 
 X1_train, X2_train, y_train = [], [], []
 
-TARGET_PAIRS = 5000
-POSITIVE_TARGET = 2500
-NEGATIVE_TARGET = 2500
-
-# Positive: Same person genuine (use only 3 images per person)
-pos_count = 0
 for pid in train_people:
-    if pos_count >= POSITIVE_TARGET:
-        break
     gen = people[pid]['genuine']
-    for i in range(min(3, len(gen))):
+    forg = people[pid]['forged']
+    
+    # Positive: All combinations of genuine (limit to 10 per person for speed)
+    for i in range(min(len(gen), 10)):
         for j in range(i+1, min(i+3, len(gen))):
-            if pos_count >= POSITIVE_TARGET:
-                break
             X1_train.append(gen[i])
             X2_train.append(gen[j])
             y_train.append(1)
-            pos_count += 1
-
-print(f"   Positive: {pos_count}")
-
-# Negative: Genuine vs Forged (same person)
-neg_count = 0
-for pid in train_people:
-    if neg_count >= NEGATIVE_TARGET:
-        break
-    gen = people[pid]['genuine']
-    forg = people[pid]['forged']
-    for g in gen[:2]:
-        for f in forg[:2]:
-            if neg_count >= NEGATIVE_TARGET:
-                break
+    
+    # Negative: All combinations of genuine vs forged (limit to 10 per person)
+    for g in gen[:5]:
+        for f in forg[:5]:
             X1_train.append(g)
             X2_train.append(f)
             y_train.append(0)
-            neg_count += 1
 
-print(f"   Negative: {neg_count}")
+print(f"   Before balance: Positive={sum(y_train)}, Negative={len(y_train)-sum(y_train)}")
 
-X1_train = np.array(X1_train).reshape(-1, 128, 128, 1)
-X2_train = np.array(X2_train).reshape(-1, 128, 128, 1)
-y_train = np.array(y_train)
+# Balance
+pos_idx = [i for i, l in enumerate(y_train) if l == 1]
+neg_idx = [i for i, l in enumerate(y_train) if l == 0]
+min_count = min(len(pos_idx), len(neg_idx))
 
-idx = np.random.permutation(len(X1_train))
-X1_train, X2_train, y_train = X1_train[idx], X2_train[idx], y_train[idx]
+keep = list(np.random.choice(pos_idx, min_count, replace=False)) + \
+       list(np.random.choice(neg_idx, min_count, replace=False))
 
-print(f"   Total training pairs: {len(X1_train)}")
+X1_train = np.array([X1_train[i] for i in keep]).reshape(-1, 128, 128, 1)
+X2_train = np.array([X2_train[i] for i in keep]).reshape(-1, 128, 128, 1)
+y_train = np.array([y_train[i] for i in keep])
+
+print(f"   After balance: Positive={sum(y_train)}, Negative={len(y_train)-sum(y_train)}")
+print(f"   Training pairs: {len(X1_train)}")
 
 # ============================================================
 # Validation pairs
@@ -146,15 +137,19 @@ for pid in val_people:
     gen = people[pid]['genuine']
     forg = people[pid]['forged']
     
-    if len(gen) >= 2:
-        X1_val.append(gen[0])
-        X2_val.append(gen[1])
-        y_val.append(1)
+    # Positive (use different images)
+    for i in range(min(3, len(gen))):
+        for j in range(i+1, min(i+3, len(gen))):
+            X1_val.append(gen[i])
+            X2_val.append(gen[j])
+            y_val.append(1)
     
-    if len(gen) >= 1 and len(forg) >= 1:
-        X1_val.append(gen[0])
-        X2_val.append(forg[0])
-        y_val.append(0)
+    # Negative
+    for g in gen[:2]:
+        for f in forg[:2]:
+            X1_val.append(g)
+            X2_val.append(f)
+            y_val.append(0)
 
 X1_val = np.array(X1_val).reshape(-1, 128, 128, 1)
 X2_val = np.array(X2_val).reshape(-1, 128, 128, 1)
@@ -209,7 +204,7 @@ print(f"   Parameters: {model.count_params():,}")
 print("\n🏋️ Training...")
 
 callbacks = [
-    ModelCheckpoint('models/model_final.keras',
+    ModelCheckpoint('models/model_full.keras',
                     monitor='val_accuracy', save_best_only=True, verbose=1),
     EarlyStopping(monitor='val_loss', patience=7, restore_best_weights=True, verbose=1)
 ]
@@ -223,7 +218,7 @@ history = model.fit(
     verbose=1
 )
 
-model.save('models/model_final.keras')
+model.save('models/model_full.keras')
 print(f"\n✅ Model saved!")
 print(f"   Best validation accuracy: {max(history.history['val_accuracy'])*100:.2f}%")
 
@@ -235,6 +230,8 @@ print("\n📋 Testing...")
 threshold = 0.3
 correct_g = 0
 correct_f = 0
+total_g = 0
+total_f = 0
 
 for pid in val_people:
     if len(people[pid]['genuine']) >= 2:
@@ -244,6 +241,7 @@ for pid in val_people:
         ], verbose=0)[0][0])
         if pred1 > threshold:
             correct_g += 1
+        total_g += 1
     
     if len(people[pid]['genuine']) >= 1 and len(people[pid]['forged']) >= 1:
         pred2 = float(model.predict([
@@ -252,10 +250,11 @@ for pid in val_people:
         ], verbose=0)[0][0])
         if pred2 < threshold:
             correct_f += 1
+        total_f += 1
 
-print(f"\n   Genuine: {correct_g}/{len(val_people)}")
-print(f"   Forged: {correct_f}/{len(val_people)}")
-print(f"   Overall: {(correct_g + correct_f)/(len(val_people)*2)*100:.1f}%")
+print(f"\n   Genuine: {correct_g}/{total_g}")
+print(f"   Forged: {correct_f}/{total_f}")
+print(f"   Overall: {(correct_g + correct_f)/(total_g + total_f)*100:.1f}%")
 
 print("\n" + "=" * 70)
 print("📋 SUMMARY")
@@ -263,7 +262,7 @@ print("=" * 70)
 print(f"""
 DATASET:
    - People: {len(people)}
-   - Total: {total_g + total_f} ✅ (1000+)
+   - Total signatures: {total_g + total_f} ✅ (1000+)
 
 TRAINING:
    - Train people: {len(train_people)}
@@ -273,9 +272,9 @@ TRAINING:
 
 RESULTS:
    - Best val accuracy: {max(history.history['val_accuracy'])*100:.2f}%
-   - Genuine: {correct_g}/{len(val_people)}
-   - Forged: {correct_f}/{len(val_people)}
-   - Overall: {(correct_g + correct_f)/(len(val_people)*2)*100:.1f}%
+   - Genuine: {correct_g}/{total_g}
+   - Forged: {correct_f}/{total_f}
+   - Overall: {(correct_g + correct_f)/(total_g + total_f)*100:.1f}%
 """)
 print("=" * 70)
 print("🎉 DONE!")
