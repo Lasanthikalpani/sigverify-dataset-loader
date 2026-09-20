@@ -1,6 +1,5 @@
 """
 RQ3 Training - Building the Blockchain Ledger
-This is how we "train" the RQ3 system
 """
 
 import os
@@ -10,7 +9,6 @@ import json
 from datetime import datetime
 
 sys.path.insert(0, 'src')
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from qr_blockchain import QRBlockchainAuth
 
@@ -18,13 +16,6 @@ from qr_blockchain import QRBlockchainAuth
 def train_rq3():
     """
     Train RQ3 = Build the blockchain ledger
-    
-    This process:
-    1. Generates 2000 documents
-    2. Creates transactions for each
-    3. Batches them into a block
-    4. Mines the block
-    5. Adds to blockchain
     """
     
     print("=" * 70)
@@ -86,9 +77,9 @@ def train_rq3():
             print(f"   ✅ Created {i+1}/2000 transactions")
     
     # =========================================================================
-    # STEP 3: Batch Transactions
+    # STEP 3: Check Blockchain State
     # =========================================================================
-    print("\n📦 Step 3: Batching transactions...")
+    print("\n📦 Step 3: Checking blockchain state...")
     
     stats = auth.get_blockchain_stats()
     
@@ -100,28 +91,23 @@ def train_rq3():
     print(f"   • Chain valid: {stats['chain_valid']}")
     
     # =========================================================================
-    # STEP 4: Save Training Data
+    # STEP 4: Save Results
     # =========================================================================
-    print("\n💾 Step 4: Saving training data...")
+    print("\n💾 Step 4: Saving training results...")
     
     os.makedirs('results/training', exist_ok=True)
     
     # Save transactions
-    with open('results/training/transactions.json', 'w', encoding='utf-8') as f:
-        json.dump(transactions, f, indent=2, ensure_ascii=False, default=str)
-    print(f"   ✅ Transactions: results/training/transactions.json")
+    output_file = 'results/training/rq3_training.json'
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump({
+            'total_documents': len(documents),
+            'total_transactions': len(transactions),
+            'blockchain_stats': stats,
+            'sample_transactions': transactions[:5]
+        }, f, indent=2, ensure_ascii=False)
     
-    # Save blockchain summary
-    with open('results/training/blockchain_summary.txt', 'w', encoding='utf-8') as f:
-        f.write("=" * 70 + "\n")
-        f.write("RQ3 BLOCKCHAIN TRAINING SUMMARY\n")
-        f.write("=" * 70 + "\n\n")
-        f.write(f"Total documents: {stats['total_documents']}\n")
-        f.write(f"Total blocks: {stats['total_blocks']}\n")
-        f.write(f"Batch size: {stats['batch_size']}\n")
-        f.write(f"Chain valid: {stats['chain_valid']}\n")
-        f.write(f"Storage saved: {stats['storage_saved']}\n")
-    print(f"   ✅ Summary: results/training/blockchain_summary.txt")
+    print(f"   ✅ Saved: {output_file}")
     
     # =========================================================================
     # SUMMARY
